@@ -622,7 +622,7 @@
     var problem = weatherProblem();
     var w = NIGHT && WX_SHOW && !problem && data.weather && data.weather.temp != null ? data.weather : null;
     $("date").innerHTML = '<span class="dline">' + esc(day) + (w ? '<span class="wx">' + wxIcon(w) + esc(tempText(w.temp)) +
-      '<span class="ww"> ' + esc(wxText(w)) + "</span></span>" : problem ? '<span class="wx">' + esc(problem) + '</span>' : "") + "</span>";
+      '<span class="ww"> ' + esc(wxText(w)) + "</span></span>" : problem ? '<span class="wx"> · ' + esc(problem) + '</span>' : "") + "</span>";
     var ic = $("idle-clock"), idate = $("idle-date"), iwx = $("idle-wx");
     if (ic) ic.innerHTML = hm + (CLOCK24 ? "" : "<small>" + esc(h < 12 ? t("am") : t("pm")) + "</small>");
     if (idate) idate.textContent = day;

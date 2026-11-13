@@ -94,6 +94,7 @@ class FireWatch : AccessibilityService() {
 
     override fun onAccessibilityEvent(e: AccessibilityEvent) {
         if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        settingsWindowShown(e.packageName?.toString(), e.className?.toString())
         stockInFront = isStockHome(e.packageName?.toString(), e.className?.toString()) &&
             !(e.packageName?.toString() == AMAZON_HOME && settingsAllowed())
         amazonInFront = stockInFront && e.packageName?.toString() == AMAZON_HOME
@@ -195,8 +196,14 @@ class FireWatch : AccessibilityService() {
          * coming forward is Settings being drawn, not a Home press, so the watch leaves it alone.
          * Only Amazon's own windows are spared; the Google homes and a real Home press later are not.
          */
-        fun allowSettingsNow() { settingsUntil = SystemClock.elapsedRealtime() + SETTINGS_GRACE_MS }
-        fun settingsAllowed(): Boolean = SystemClock.elapsedRealtime() < settingsUntil
+        fun allowSettingsNow(now: Long = SystemClock.elapsedRealtime()) { settingsUntil = now + SETTINGS_GRACE_MS }
+        fun settingsAllowed(now: Long = SystemClock.elapsedRealtime()): Boolean = now < settingsUntil
+
+        /** Settings is visible now: a subsequent Home press must no longer be ignored. */
+        internal fun settingsWindowShown(pkg: String?, cls: String?) {
+            if ((pkg == AMAZON_HOME && cls == AMAZON_SETTINGS) || pkg == AMAZON_SETTINGS_PKG ||
+                pkg?.startsWith("$AMAZON_SETTINGS_PKG.") == true) settingsUntil = 0L
+        }
         private val STOCK_HOMES = listOf(AMAZON_HOME, GOOGLE_TV_HOME, ANDROID_TV_HOME)
 
         /** Stock activities that the TV itself lists as a HOME screen (read when the service binds). */

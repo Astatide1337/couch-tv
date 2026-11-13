@@ -346,7 +346,7 @@ with the TV home Gradle build. This mode requires an existing keystore plus
 `COUCHTV_KEY_PASSWORD` in the build environment; it never silently falls back to a debug key.
 Keep the config, keystore and passwords outside the checkout. Back up the signing key:
 Android needs the same key to preserve settings during an update. Personal builds use
-version code 1001 and version name `0.12-personal.1`; increase the code for later updates.
+version code 1002 and version name `0.12-personal.2`; increase the code for later updates.
 
 Pass `-PupdateRepo=` to disable upstream APK update offers for a privately signed build.
 An upstream APK with another certificate cannot update it. Keep the original Android
@@ -359,3 +359,5 @@ grant anything. Set `home.keep_watching` to `false` when the listings permission
 are unwanted. Weather requests time out after eight seconds, retry once after a minute
 while the home is visible, and show an out-of-date label after 65 minutes without a
 successful read. Home settings, Weather shows the town and last successful read time.
+
+The Fire TV Settings entry grace ends when its actual Settings window appears. This keeps the entry transition open while allowing an immediate Home press to return to Couch TV.

@@ -6,6 +6,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+dependencies { testImplementation("junit:junit:4.13.2") }
+
 val personalRelease = project.findProperty("personalRelease") == "true"
 if (personalRelease) {
     require(project.hasProperty("configJson")) { "A personal release requires -PconfigJson=<private file>" }
@@ -21,8 +23,8 @@ android {
         applicationId = "app.couchtv.launcher"
         minSdk = 23          // Android 6.0 (older Mi TVs); Fire OS 6 (7.1) sticks install it too
         targetSdk = 34
-        versionCode = if (personalRelease) 1001 else 14
-        versionName = if (personalRelease) "0.12-personal.1" else "0.12"
+        versionCode = if (personalRelease) 1002 else 14
+        versionName = if (personalRelease) "0.12-personal.2" else "0.12"
         manifestPlaceholders["homeAppLabel"] = if (personalRelease) "Couch TV" else "Home"
         // Where the bridge might be: ./gradlew assembleRelease -PbridgeUrls=http://my-computer.local:5400
         // (comma separated, more than one is fine). The last one that answered is remembered on the TV.
