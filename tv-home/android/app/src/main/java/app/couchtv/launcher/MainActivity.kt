@@ -1068,6 +1068,16 @@ class MainActivity : Activity() {
 
     /** Asks once. Without it Android answers the Watch Next query with nothing. */
     private fun askWatchNextPermission() {
+        // The private bundled config is authoritative until an installer supplies newer settings.
+        val keepWatching = runCatching {
+            val raw = prefs.getString("config", null) ?: assets.open("$BUNDLED/config.js")
+                .bufferedReader().use { it.readText() }.substringAfter("window.COUCH_CONFIG = ").trim().removeSuffix(";")
+            val saved = getSharedPreferences("page", MODE_PRIVATE).getString("tvhome.settings", null)
+            val local = saved?.let { JSONObject(it).optJSONObject("s") }?.opt("keep_watching")
+            if (local is Boolean) local
+            else JSONObject(raw).optJSONObject("home")?.optBoolean("keep_watching", true) ?: true
+        }.getOrDefault(false)
+        if (!keepWatching) return
         if (checkSelfPermission(READ_TV) == PackageManager.PERMISSION_GRANTED) return
         if (prefs.getBoolean("askedWatchNext", false)) return
         prefs.edit().putBoolean("askedWatchNext", true).apply()

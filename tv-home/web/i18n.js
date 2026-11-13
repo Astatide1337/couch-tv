@@ -27,6 +27,9 @@
   var S = {};
 
   S.en = {
+    wx_unavailable: "Weather unavailable",
+    wx_stale: "Weather out of date",
+    wx_updated: "Updated",
     // LG Developer Mode warnings, from the bridge (devmode warning_key / warning_vars)
     devmode_gone: "couch-tv is no longer installed on the TV. Developer Mode probably ran out. Switch Developer Mode on again and ask Claude to reinstall couch-tv.",
     devmode_runs_out: "Developer Mode runs out in {days} days, and then LG removes couch-tv. Turn the TV on for a minute so it can be renewed, or press Extend in the Developer Mode app on the TV.",

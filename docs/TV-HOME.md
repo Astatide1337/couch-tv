@@ -337,3 +337,25 @@ remote has no French yet.
 The optional smart-home controls are translated too. The phone has its own choice (TV menu,
 Language), "Same as the TV" by default. Messages that come from the bridge itself (an error, a note
 about how a show opened) and some screen reader labels on the phone are still in English.
+
+## A privately signed TV-only build
+
+For a maintained personal APK, use `-PpersonalRelease=true -PconfigJson=<private-file>`
+with the TV home Gradle build. This mode requires an existing keystore plus
+`COUCHTV_KEYSTORE`, `COUCHTV_KEY_ALIAS`, `COUCHTV_STORE_PASSWORD` and
+`COUCHTV_KEY_PASSWORD` in the build environment; it never silently falls back to a debug key.
+Keep the config, keystore and passwords outside the checkout. Back up the signing key:
+Android needs the same key to preserve settings during an update. Personal builds use
+version code 1001 and version name `0.12-personal.1`; increase the code for later updates.
+
+Pass `-PupdateRepo=` to disable upstream APK update offers for a privately signed build.
+An upstream APK with another certificate cannot update it. Keep the original Android
+application ID for the existing watcher components; this also means it cannot be installed
+beside another upstream TV-home APK.
+
+When adopting Home through ADB, set `home.manual_home_adoption` to `true` to suppress
+the Android default-home chooser. This flag does not enable the accessibility watcher or
+grant anything. Set `home.keep_watching` to `false` when the listings permission and row
+are unwanted. Weather requests time out after eight seconds, retry once after a minute
+while the home is visible, and show an out-of-date label after 65 minutes without a
+successful read. Home settings, Weather shows the town and last successful read time.
