@@ -1,5 +1,6 @@
 package app.couchtv.launcher
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -30,6 +31,18 @@ class SettingsGraceTest {
         FireWatch.settingsWindowShown("com.amazon.tv.settingsimpostor", "SettingsActivity")
         FireWatch.settingsWindowShown(null, null)
         assertTrue(FireWatch.settingsAllowed(101L))
+    }
+
+    @Test fun ignoredHomeHasABoundedRecheckDelay() {
+        assertEquals(8000L, FireWatch.settingsGraceRemaining(100L))
+        assertEquals(1L, FireWatch.settingsGraceRemaining(8099L))
+        assertEquals(0L, FireWatch.settingsGraceRemaining(8100L))
+        assertEquals(0L, FireWatch.settingsGraceRemaining(9000L))
+    }
+
+    @Test fun actualSettingsRemovesTheRecheckDelay() {
+        FireWatch.settingsWindowShown(FireWatch.AMAZON_HOME, FireWatch.AMAZON_SETTINGS)
+        assertEquals(0L, FireWatch.settingsGraceRemaining(101L))
     }
 
     @Test fun graceExpiresAtItsOriginalDeadline() {

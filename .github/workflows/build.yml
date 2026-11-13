@@ -56,6 +56,12 @@ jobs:
       - name: Build the TV apps
         run: sh scripts/build-apk.sh
 
+      - name: TV home unit and lifecycle tests
+        run: |
+          tv-home/android/gradlew -p tv-home/android --no-daemon -q testDebugUnitTest
+          node tests/test_manual_home_weather.js
+          python -m unittest discover -s tests -p test_fire_settings_watch.py
+
       - name: On-TV app unit tests
         run: tv-home/android/gradlew -p on-tv/android --no-daemon -q testDebugUnitTest
 

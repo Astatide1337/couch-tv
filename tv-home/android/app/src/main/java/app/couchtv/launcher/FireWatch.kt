@@ -43,6 +43,13 @@ class FireWatch : AccessibilityService() {
     private var stockInFront = false
     /** That home is Amazon's: see [moveToFront]. */
     private var amazonInFront = false
+    private var settingsRecheckPending = false
+    private val settingsRecheck = Runnable {
+        settingsRecheckPending = false
+        if (amazonInFront && !CrashGuard.standingAside(this)) {
+            if (settingsAllowed()) scheduleSettingsRecheck() else bringBack()
+        }
+    }
     private var recheckPending = false
     private val recheck = Runnable {
         recheckPending = false
@@ -88,6 +95,8 @@ class FireWatch : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         connected = false
         handler.removeCallbacks(recheck)
+        handler.removeCallbacks(settingsRecheck)
+        settingsRecheckPending = false
         recheckPending = false
         return super.onUnbind(intent)
     }
@@ -97,7 +106,13 @@ class FireWatch : AccessibilityService() {
         settingsWindowShown(e.packageName?.toString(), e.className?.toString())
         stockInFront = isStockHome(e.packageName?.toString(), e.className?.toString()) &&
             !(e.packageName?.toString() == AMAZON_HOME && settingsAllowed())
-        amazonInFront = stockInFront && e.packageName?.toString() == AMAZON_HOME
+        // Keep the raw latest window for a deferred check while entry grace suppresses Home.
+        amazonInFront = e.packageName?.toString() == AMAZON_HOME &&
+            isStockHome(e.packageName?.toString(), e.className?.toString())
+        if (amazonInFront && settingsAllowed()) {
+            scheduleSettingsRecheck()
+            return
+        }
         if (!stockInFront) return
         if (CrashGuard.standingAside(this)) return
         val wait = DEBOUNCE_MS - (System.currentTimeMillis() - last)
@@ -112,6 +127,12 @@ class FireWatch : AccessibilityService() {
             return
         }
         bringBack()
+    }
+
+    private fun scheduleSettingsRecheck() {
+        if (settingsRecheckPending) return
+        settingsRecheckPending = true
+        handler.postDelayed(settingsRecheck, settingsGraceRemaining() + 50L)
     }
 
     private fun bringBack() {
@@ -198,6 +219,8 @@ class FireWatch : AccessibilityService() {
          */
         fun allowSettingsNow(now: Long = SystemClock.elapsedRealtime()) { settingsUntil = now + SETTINGS_GRACE_MS }
         fun settingsAllowed(now: Long = SystemClock.elapsedRealtime()): Boolean = now < settingsUntil
+        internal fun settingsGraceRemaining(now: Long = SystemClock.elapsedRealtime()): Long =
+            (settingsUntil - now).coerceAtLeast(0L)
 
         /** Settings is visible now: a subsequent Home press must no longer be ignored. */
         internal fun settingsWindowShown(pkg: String?, cls: String?) {
