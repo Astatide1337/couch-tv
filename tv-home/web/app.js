@@ -604,6 +604,11 @@
 
   // Open-Meteo gives Celsius; Fahrenheit is worked out here when Home settings asks for it.
   function tempText(c) { return WX_F ? Math.round(c * 9 / 5 + 32) + "°F" : c + "°"; }
+  function weatherProblem() {
+    if (!NIGHT || !WX_SHOW) return "";
+    if (!data.weather || data.weather.temp == null) return t("wx_unavailable");
+    return weatherSeen && Date.now() - weatherSeen > 65 * 60000 ? t("wx_stale") : "";
+  }
   function wxText(w) { var k = WMO_KEY[w.code]; return k ? t(k) : (w.text || ""); }
 
   function clock() {
@@ -614,15 +619,16 @@
     var loc = window.I18N ? window.I18N.locale() : "en-AU";
     var day = d.toLocaleDateString(loc, { weekday: "long", day: "numeric", month: "long" }).replace(",", "");
     day = day.charAt(0).toUpperCase() + day.slice(1);   // "lunes 27 de octubre" starts a line on screen
-    var w = NIGHT && WX_SHOW && data.weather && data.weather.temp != null ? data.weather : null;
+    var problem = weatherProblem();
+    var w = NIGHT && WX_SHOW && !problem && data.weather && data.weather.temp != null ? data.weather : null;
     $("date").innerHTML = '<span class="dline">' + esc(day) + (w ? '<span class="wx">' + wxIcon(w) + esc(tempText(w.temp)) +
-      '<span class="ww"> ' + esc(wxText(w)) + "</span></span>" : "") + "</span>";
+      '<span class="ww"> ' + esc(wxText(w)) + "</span></span>" : problem ? '<span class="wx"> · ' + esc(problem) + '</span>' : "") + "</span>";
     var ic = $("idle-clock"), idate = $("idle-date"), iwx = $("idle-wx");
     if (ic) ic.innerHTML = hm + (CLOCK24 ? "" : "<small>" + esc(h < 12 ? t("am") : t("pm")) + "</small>");
     if (idate) idate.textContent = day;
     if (iwx) {
-      var wIdle = WX_SHOW && data.weather && data.weather.temp != null ? data.weather : null;
-      iwx.textContent = wIdle ? (tempText(wIdle.temp) + " · " + wxText(wIdle)) : "";
+      var wIdle = WX_SHOW && !problem && data.weather && data.weather.temp != null ? data.weather : null;
+      iwx.textContent = wIdle ? (tempText(wIdle.temp) + " · " + wxText(wIdle)) : problem;
     }
     var iov = $("idle-ambient-overlay");
     if (iov) iov.classList.toggle("quiet-hours", isQuietHours(SMART_IDLE.quiet_hours));
@@ -842,8 +848,8 @@
   }
   function pauseVideo() { stopSoundscape(); if (window.AmbientWeather) window.AmbientWeather.pause(); var v = $("bgvid"); if (v.getAttribute("src")) v.pause(); sceneVideos(false); }
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) { saveFocusNow(); pauseVideo(); }
-    else { setIdleAmbient(false); resetSmartIdle(); startVideo(); sceneVideos(true); if (window.AmbientWeather) window.AmbientWeather.resume(); resetIdlePhoto(); }
+    if (document.hidden) { clearTimeout(weatherRetry); weatherRetry = null; saveFocusNow(); pauseVideo(); }
+    else { refreshWeather(); setIdleAmbient(false); resetSmartIdle(); startVideo(); sceneVideos(true); if (window.AmbientWeather) window.AmbientWeather.resume(); resetIdlePhoto(); }
   });
 
   // A scene's own clip (home.my_scenes[].video): only the scene on screen plays, and only while the
@@ -1042,17 +1048,30 @@
 
   // The bridge's reading for the place in config.json, or straight from Open-Meteo with no bridge
   // or when Home settings chose another place. Hidden when Home settings switched the weather off.
+  var weatherSeen = 0, weatherTicket = 0, weatherVisible = true;
+  var weatherRetry = null, weatherRetried = false;
   function refreshWeather() {
-    if (!NIGHT || !WX_SHOW) {
+    if (!NIGHT || !WX_SHOW || !weatherVisible || document.hidden) {
       updateAmbientWeather();
       return Promise.resolve();
     }
+    clearTimeout(weatherRetry); weatherRetry = null;
+    var ticket = ++weatherTicket, place = WXCFG;
     var direct = OFFLINE || !!(ST.place && isFinite(ST.place.lat));
     return (direct ? weatherDirect() : api("GET", "/api/weather")).then(function (j) {
-      data.weather = j;
+      if (ticket !== weatherTicket || place !== WXCFG) return;
+      if (!j || j.temp == null || !isFinite(j.temp)) throw new Error("weather data");
+      data.weather = j; weatherSeen = Date.now(); weatherRetried = false;
       clock();
       updateAmbientWeather();
-    }, function () {});
+    }).catch(function () {
+      if (ticket !== weatherTicket || place !== WXCFG) return;
+      clock();
+      if (!weatherRetried && weatherVisible && !document.hidden) {
+        weatherRetried = true;
+        weatherRetry = setTimeout(refreshWeather, 60000);
+      }
+    });
   }
 
   // Open-Meteo (free, no key), the same call the bridge makes. The words come from i18n.js.
@@ -1063,9 +1082,21 @@
   function weatherDirect() {
     var url = "https://api.open-meteo.com/v1/forecast?latitude=" + WXCFG.lat + "&longitude=" + WXCFG.lon +
       "&current=temperature_2m,weather_code,is_day&timezone=" + encodeURIComponent(WXCFG.timezone || "auto") + "&forecast_days=1";
-    return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
-      var c = j.current, code = Math.round(c.weather_code);
-      return { temp: Math.round(c.temperature_2m), code: code, text: "", is_day: !!c.is_day };
+    // XHR's timeout works on older Fire OS WebViews without AbortController.
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", url, true); xhr.timeout = 8000;
+      xhr.onerror = xhr.ontimeout = function () { reject(new Error("weather network")); };
+      xhr.onload = function () {
+        try {
+          if (xhr.status < 200 || xhr.status >= 300) throw new Error("weather HTTP");
+          var c = JSON.parse(xhr.responseText).current;
+          if (!c || c.temperature_2m == null || c.weather_code == null ||
+              !isFinite(c.temperature_2m) || !isFinite(c.weather_code)) throw new Error("weather data");
+          resolve({ temp: Math.round(c.temperature_2m), code: Math.round(c.weather_code), text: "", is_day: !!c.is_day });
+        } catch (e) { reject(e); }
+      };
+      xhr.send();
     });
   }
 
@@ -3282,6 +3313,8 @@
   // ---- weather ----
   function weatherRows() {
     return [
+      info("wx-freshness", WXCFG.place || t("loc_unset"), weatherProblem() ||
+        (weatherSeen ? t("wx_updated") + " " + new Date(weatherSeen).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : t("wx_unavailable"))),
       { kind: "toggle", key: "wx-show", label: t("wx_show"), value: WX_SHOW ? t("on") : t("off"), act: function () {
         WX_SHOW = !WX_SHOW; ST.wx_show = WX_SHOW; saveSettings();
         if (WX_SHOW) refreshWeather();
@@ -3790,7 +3823,7 @@
     try { ver = TV && TV.version ? TV.version() : ""; } catch (e) {}
     var run = ALONE ? "run_alone" : OFFLINE ? "run_off" : data.bridge === false ? "run_quiet" : "run_bridge";
     var hs = homeState(), homeRows = [];
-    if (hs === "ask") homeRows.push({ kind: "action", key: "make-home", label: t("home_row"), sub: t("home_row_sub"), act: requestHome });
+    if (hs === "ask" && !HOME.manual_home_adoption) homeRows.push({ kind: "action", key: "make-home", label: t("home_row"), sub: t("home_row_sub"), act: requestHome });
     else if (hs === "google_tv") homeRows.push(info("make-home", t("home_row"), "", t("home_google_tv")));
     return homeRows.concat([
       info("ver", t("about_version"), ver || t("about_web")),
@@ -3907,10 +3940,11 @@
     try { return TV && TV.homeState ? String(TV.homeState()) : "held"; } catch (e) { return "held"; }
   }
   function requestHome() {
+    if (HOME.manual_home_adoption) return;
     try { if (TV && TV.requestHome) TV.requestHome(); } catch (e) {}
   }
   function homeAsk() {
-    if (kept("tvhome.home.asked") || kidsOn()) return;
+    if (HOME.manual_home_adoption || kept("tvhome.home.asked") || kidsOn()) return;
     if (zone !== "grid" && zone !== "shelf" && zone !== "people" && zone !== "quick") return;
     if (homeState() !== "ask") return;
     askKind = "home"; zone = "updask"; ai = 0;
@@ -4610,9 +4644,9 @@
     noDream: function () { note(t("no_dream")); },
     // the remote's Settings/gear key, caught by the launcher natively (MainActivity.dispatchKeyEvent)
     settingsKey: function () { blip(0, 0); settingsKey(); },
-    resume: function () { toggleScreenOff(false); setIdleAmbient(false); resetSmartIdle(); okReset(); refresh(); if (!OFFLINE) refreshQuick(); refreshWeather(); startVideo(); sceneVideos(true); refreshMusic(); if (window.AmbientWeather) window.AmbientWeather.resume(); resetIdlePhoto(); },
+    resume: function () { weatherVisible = true; toggleScreenOff(false); setIdleAmbient(false); resetSmartIdle(); okReset(); refresh(); if (!OFFLINE) refreshQuick(); refreshWeather(); startVideo(); sceneVideos(true); refreshMusic(); if (window.AmbientWeather) window.AmbientWeather.resume(); resetIdlePhoto(); },
     // an app is in front: the video background stops until the home is back
-    pause: function () { saveFocusNow(); pauseVideo(); },
+    pause: function () { weatherVisible = false; clearTimeout(weatherRetry); weatherRetry = null; saveFocusNow(); pauseVideo(); },
     // the launcher's file picker has copied the chosen photos into its own storage (Home settings)
     photosAdded: function (names) { photosAdded(names); },
     // the launcher's updater has news (Updater.kt)

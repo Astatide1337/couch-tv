@@ -6,6 +6,16 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+dependencies { testImplementation("junit:junit:4.13.2") }
+
+val personalRelease = project.findProperty("personalRelease") == "true"
+if (personalRelease) {
+    require(project.hasProperty("configJson")) { "A personal release requires -PconfigJson=<private file>" }
+    for (key in listOf("COUCHTV_KEYSTORE", "COUCHTV_KEY_ALIAS", "COUCHTV_STORE_PASSWORD", "COUCHTV_KEY_PASSWORD")) {
+        require(!System.getenv(key).isNullOrBlank()) { "Missing personal signing setting: $key" }
+    }
+}
+
 android {
     namespace = "app.couchtv.launcher"
     compileSdk = 34
@@ -13,8 +23,9 @@ android {
         applicationId = "app.couchtv.launcher"
         minSdk = 23          // Android 6.0 (older Mi TVs); Fire OS 6 (7.1) sticks install it too
         targetSdk = 34
-        versionCode = 14
-        versionName = "0.12"
+        versionCode = if (personalRelease) 1003 else 14
+        versionName = if (personalRelease) "0.12-personal.3" else "0.12"
+        manifestPlaceholders["homeAppLabel"] = if (personalRelease) "Couch TV" else "Home"
         // Where the bridge might be: ./gradlew assembleRelease -PbridgeUrls=http://my-computer.local:5400
         // (comma separated, more than one is fine). The last one that answered is remembered on the TV.
         // Without it, apply.sh tells the app the address when it installs (the "bridge" extra), and
@@ -30,12 +41,13 @@ android {
     // Test builds: when COUCHTV_KEYSTORE names a keystore (a debug-style key, alias androiddebugkey,
     // password android), release builds are signed with it, so one test build can update the last (#4).
     val fixedKey = System.getenv("COUCHTV_KEYSTORE")?.let { file(it) }?.takeIf { it.isFile }
+    if (personalRelease) require(fixedKey != null) { "Personal signing keystore does not exist" }
     signingConfigs {
         if (fixedKey != null) create("fixed") {
             storeFile = fixedKey
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            storePassword = System.getenv("COUCHTV_STORE_PASSWORD") ?: "android"
+            keyAlias = System.getenv("COUCHTV_KEY_ALIAS") ?: "androiddebugkey"
+            keyPassword = System.getenv("COUCHTV_KEY_PASSWORD") ?: "android"
         }
     }
     buildTypes {

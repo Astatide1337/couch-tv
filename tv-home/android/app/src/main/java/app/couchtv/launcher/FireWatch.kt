@@ -44,6 +44,13 @@ class FireWatch : AccessibilityService() {
     private var stockInFront = false
     /** That home is Amazon's: see [moveToFront]. */
     private var amazonInFront = false
+    private var settingsRecheckPending = false
+    private val settingsRecheck = Runnable {
+        settingsRecheckPending = false
+        if (amazonInFront && !CrashGuard.standingAside(this)) {
+            if (settingsAllowed()) scheduleSettingsRecheck() else bringBack()
+        }
+    }
     private var recheckPending = false
     private val recheck = Runnable {
         recheckPending = false
@@ -89,6 +96,8 @@ class FireWatch : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         connected = false
         handler.removeCallbacks(recheck)
+        handler.removeCallbacks(settingsRecheck)
+        settingsRecheckPending = false
         recheckPending = false
         return super.onUnbind(intent)
     }
@@ -99,10 +108,17 @@ class FireWatch : AccessibilityService() {
         // Fibe opened from couch-tv's own tile stays open (see [fibeOpenedNow]). Once any other window
         // comes forward, after the launch has settled, Fibe is only ever replaced again by a new open.
         if (pkg != BELL_FIBE_HOME && pkg != null && fibeOpenedOnPurpose && !fibeInGrace()) fibeOpenedOnPurpose = false
+        settingsWindowShown(pkg, e.className?.toString())
         stockInFront = isStockHome(pkg, e.className?.toString()) &&
             !(pkg == AMAZON_HOME && settingsAllowed()) &&
             !(pkg == BELL_FIBE_HOME && fibeOpenedOnPurpose)
-        amazonInFront = stockInFront && e.packageName?.toString() == AMAZON_HOME
+        // Keep the raw latest window for a deferred check while entry grace suppresses Home.
+        amazonInFront = pkg == AMAZON_HOME &&
+            isStockHome(pkg, e.className?.toString())
+        if (amazonInFront && settingsAllowed()) {
+            scheduleSettingsRecheck()
+            return
+        }
         if (!stockInFront) return
         if (CrashGuard.standingAside(this)) return
         val wait = DEBOUNCE_MS - (System.currentTimeMillis() - last)
@@ -117,6 +133,12 @@ class FireWatch : AccessibilityService() {
             return
         }
         bringBack()
+    }
+
+    private fun scheduleSettingsRecheck() {
+        if (settingsRecheckPending) return
+        settingsRecheckPending = true
+        handler.postDelayed(settingsRecheck, settingsGraceRemaining() + 50L)
     }
 
     private fun bringBack() {
@@ -204,9 +226,16 @@ class FireWatch : AccessibilityService() {
          * coming forward is Settings being drawn, not a Home press, so the watch leaves it alone.
          * Only Amazon's own windows are spared; the Google homes and a real Home press later are not.
          */
-        fun allowSettingsNow() { settingsUntil = SystemClock.elapsedRealtime() + SETTINGS_GRACE_MS }
-        fun settingsAllowed(): Boolean = SystemClock.elapsedRealtime() < settingsUntil
+        fun allowSettingsNow(now: Long = SystemClock.elapsedRealtime()) { settingsUntil = now + SETTINGS_GRACE_MS }
+        fun settingsAllowed(now: Long = SystemClock.elapsedRealtime()): Boolean = now < settingsUntil
+        internal fun settingsGraceRemaining(now: Long = SystemClock.elapsedRealtime()): Long =
+            (settingsUntil - now).coerceAtLeast(0L)
 
+        /** Settings is visible now: a subsequent Home press must no longer be ignored. */
+        internal fun settingsWindowShown(pkg: String?, cls: String?) {
+            if ((pkg == AMAZON_HOME && cls == AMAZON_SETTINGS) || pkg == AMAZON_SETTINGS_PKG ||
+                pkg?.startsWith("$AMAZON_SETTINGS_PKG.") == true) settingsUntil = 0L
+        }
         private const val FIBE_GRACE_MS = 5_000L
         @Volatile private var fibeOpenedOnPurpose = false
         @Volatile private var fibeSince = 0L

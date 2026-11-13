@@ -34,6 +34,24 @@ class FireSettingsWatch(unittest.TestCase):
     def test_grace_only_spares_amazon_windows(self):
         self.assertRegex(WATCH, r"pkg == AMAZON_HOME && settingsAllowed\(\)")
 
+    def test_settings_arrival_is_wired_before_home_classification(self):
+        body = WATCH.split("override fun onAccessibilityEvent", 1)[1].split("\n    private fun", 1)[0]
+        self.assertIn("settingsWindowShown(", body)
+        self.assertLess(body.index("settingsWindowShown("), body.index("stockInFront ="))
+
+    def test_ignored_home_has_a_grace_expiry_recheck(self):
+        body = WATCH.split("override fun onAccessibilityEvent", 1)[1].split("\n    private fun", 1)[0]
+        self.assertRegex(body, r"if \(amazonInFront && settingsAllowed\(\)\) \{\s*scheduleSettingsRecheck\(\)")
+        callback = WATCH.split("private val settingsRecheck = Runnable", 1)[1].split("private var recheckPending", 1)[0]
+        self.assertIn("if (amazonInFront && !CrashGuard.standingAside(this))", callback)
+        self.assertIn("if (settingsAllowed()) scheduleSettingsRecheck() else bringBack()", callback)
+        self.assertIn("settingsGraceRemaining() + 50L", WATCH)
+
+    def test_unbinding_cancels_the_grace_recheck(self):
+        body = WATCH.split("override fun onUnbind", 1)[1].split("override fun onAccessibilityEvent", 1)[0]
+        self.assertIn("handler.removeCallbacks(settingsRecheck)", body)
+        self.assertIn("settingsRecheckPending = false", body)
+
 
 if __name__ == "__main__":
     unittest.main()
