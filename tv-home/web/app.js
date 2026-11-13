@@ -849,7 +849,7 @@
   function pauseVideo() { stopSoundscape(); if (window.AmbientWeather) window.AmbientWeather.pause(); var v = $("bgvid"); if (v.getAttribute("src")) v.pause(); sceneVideos(false); }
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) { clearTimeout(weatherRetry); weatherRetry = null; saveFocusNow(); pauseVideo(); }
-    else { setIdleAmbient(false); resetSmartIdle(); startVideo(); sceneVideos(true); if (window.AmbientWeather) window.AmbientWeather.resume(); resetIdlePhoto(); }
+    else { refreshWeather(); setIdleAmbient(false); resetSmartIdle(); startVideo(); sceneVideos(true); if (window.AmbientWeather) window.AmbientWeather.resume(); resetIdlePhoto(); }
   });
 
   // A scene's own clip (home.my_scenes[].video): only the scene on screen plays, and only while the
@@ -3313,7 +3313,7 @@
   // ---- weather ----
   function weatherRows() {
     return [
-      info("wx-freshness", WXCFG.place || t("wx_location"), weatherProblem() ||
+      info("wx-freshness", WXCFG.place || t("loc_unset"), weatherProblem() ||
         (weatherSeen ? t("wx_updated") + " " + new Date(weatherSeen).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : t("wx_unavailable"))),
       { kind: "toggle", key: "wx-show", label: t("wx_show"), value: WX_SHOW ? t("on") : t("off"), act: function () {
         WX_SHOW = !WX_SHOW; ST.wx_show = WX_SHOW; saveSettings();

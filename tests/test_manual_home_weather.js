@@ -54,6 +54,23 @@ async function test() {
   assert.equal(w.weatherRetried, true, 'a failed read schedules one bounded retry');
   assert.equal(clockUpdates, 2, 'failure refreshes the status as well as success');
 
+  // Android can resume before WebView reports visibility. The later visibility event
+  // must recover the refresh that the hidden gate intentionally skipped.
+  let visibility;
+  w.document.addEventListener = (event, callback) => { visibility = callback; };
+  for (const name of ['saveFocusNow', 'pauseVideo', 'setIdleAmbient', 'resetSmartIdle',
+    'startVideo', 'sceneVideos', 'resetIdlePhoto']) w[name] = () => {};
+  w.window = {};
+  const listenerStart = source.indexOf('  document.addEventListener("visibilitychange", function () {');
+  vm.runInContext(source.slice(listenerStart, source.indexOf('\n  });', listenerStart) + 6), w);
+  w.document.hidden = true;
+  await w.refreshWeather();
+  next = {temp: 15, code: 0, is_day: true};
+  w.document.hidden = false;
+  visibility();
+  await Promise.resolve();
+  assert.equal(w.data.weather.temp, 15, 'visibility catches the resume-before-visible race');
+
   let xhr;
   function XHR() { xhr = this; }
   XHR.prototype.open = function(method, url) { this.url = url; };
