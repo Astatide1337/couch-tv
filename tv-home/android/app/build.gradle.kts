@@ -23,8 +23,8 @@ android {
         applicationId = "app.couchtv.launcher"
         minSdk = 23          // Android 6.0 (older Mi TVs); Fire OS 6 (7.1) sticks install it too
         targetSdk = 34
-        versionCode = if (personalRelease) 1003 else 14
-        versionName = if (personalRelease) "0.12-personal.3" else "0.12"
+        versionCode = if (personalRelease) 1007 else 14
+        versionName = if (personalRelease) "0.12-personal.7" else "0.12"
         manifestPlaceholders["homeAppLabel"] = if (personalRelease) "Couch TV" else "Home"
         // Where the bridge might be: ./gradlew assembleRelease -PbridgeUrls=http://my-computer.local:5400
         // (comma separated, more than one is fine). The last one that answered is remembered on the TV.
@@ -82,6 +82,9 @@ abstract class BundleTvWeb : DefaultTask() {
     @get:InputFile
     abstract val configJson: RegularFileProperty
 
+    @get:InputFiles
+    abstract val appLogos: ConfigurableFileCollection
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -97,6 +100,7 @@ abstract class BundleTvWeb : DefaultTask() {
             if (rel == "mock.js" || rel.endsWith(".md") || f.name.startsWith(".")) return@forEach
             f.copyTo(File(dest, rel), overwrite = true)
         }
+        appLogos.files.forEach { it.copyTo(File(dest, "app-logos/${it.name}"), overwrite = true) }
         File(dest, "config.js").writeText("window.COUCH_CONFIG = " + JsonOutput.toJson(publicConfig(configJson.get().asFile)) + ";\n")
     }
 
@@ -142,6 +146,8 @@ val configFile: File = (project.findProperty("configJson") as String?)?.let { fi
 
 val bundleTvWeb = tasks.register<BundleTvWeb>("bundleTvWeb") {
     web.set(rootProject.layout.projectDirectory.dir("../web"))
+    appLogos.from(listOf("com.amazon.amazonvideo.livingroom", "com.amazon.firetv.youtube", "com.google.android.youtube.tv", "com.netflix.ninja")
+        .map { repoRoot.resolve("remote/src/app-logos/$it.png") })
     configJson.set(configFile)
     outputDir.set(layout.buildDirectory.dir("generated/tvweb"))
 }
