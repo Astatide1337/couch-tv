@@ -1479,16 +1479,36 @@ class MainActivity : Activity() {
         sq.recycle()
     }
 
-    /** The app's square icon as a PNG, for the small badge on Keep watching tiles. */
+    /** Square artwork for the Night dock and the small Keep watching badges. */
     private fun iconImage(pkg: String): ByteArray? {
         icons[pkg]?.let { return it }
+        // Reuse the sharp square artwork used by Couch TV's advertised home and phone remote.
+        // Fire TV Prime supplies a 320x180 banner as its app icon, not a square launcher asset.
+        val logo = when (pkg) {
+            "com.amazon.firebat", "com.amazon.amazonvideo.livingroom" -> "com.amazon.amazonvideo.livingroom"
+            "com.amazon.firetv.youtube" -> "com.amazon.firetv.youtube"
+            "com.google.android.youtube.tv" -> "com.google.android.youtube.tv"
+            "com.netflix.ninja" -> "com.netflix.ninja"
+            else -> null
+        }
+        if (logo != null) {
+            runCatching { assets.open("$BUNDLED/app-logos/$logo.png").use { it.readBytes() } }.getOrNull()?.let {
+                icons[pkg] = it
+                return it
+            }
+        }
         val ri = tvApps().firstOrNull { it.activityInfo.packageName == pkg }
         // At 256 px from the sharpest icon the app ships: at the TV's own xhdpi most icons are 96 px
         // and looked soft on a big 4K screen (issue #17).
         val d = ri?.let { sharp(pkg, it.activityInfo.iconResource) } ?: ri?.loadIcon(packageManager)
             ?: try { packageManager.getApplicationIcon(pkg) } catch (e: Exception) { return null }
         val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
-        d.setBounds(0, 0, 256, 256)
+        val bounds = IconBounds.fit(d.intrinsicWidth, d.intrinsicHeight, 256)
+        d.setBounds(bounds.left, bounds.top, bounds.right, bounds.bottom)
+        if (d is android.graphics.drawable.BitmapDrawable) {
+            d.isFilterBitmap = true
+            d.setAntiAlias(true)
+        }
         d.draw(Canvas(bmp))
         val bytes = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it); bmp.recycle() }.toByteArray()
         icons[pkg] = bytes

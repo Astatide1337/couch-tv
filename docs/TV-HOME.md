@@ -264,6 +264,10 @@ Links straight to Apple's own server (`sylvan.apple.com`, the tvOS aerials) neve
 certificate from Apple's private authority, which Android and Chrome do not trust. Copies of the same
 aerials on other hosts, or saved on a computer at home, play fine as MOV (#27).
 
+On the Android launcher, YouTube, Netflix and Prime Video use the same square artwork supplied for
+Couch TV’s phone remote and promotional home. Other installed apps use their own icon, fitted
+without stretching; a rectangular TV banner keeps its proportions inside the square dock tile.
+
 ## Your own photos
 
 On a TV with a file picker, **Add photos from a USB drive or this TV** opens it and copies the photos
