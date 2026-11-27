@@ -418,9 +418,12 @@
     initSoundscape();
     if (smartOn()) DOCK_APPS = Math.min(DOCK_APPS, 9);   // the Smart home tile takes one place in the dock
     CLOCK24 = clock24();
+    var linkIds = {};
     LINKS = (Array.isArray(HOME.links) ? HOME.links : []).filter(function (l) {
-      return l && typeof l.id === "string" && /^[a-z0-9-]{1,40}$/.test(l.id) && typeof l.name === "string" && l.name &&
+      var ok = l && typeof l.id === "string" && /^[a-z0-9-]{1,40}$/.test(l.id) && !linkIds[l.id] && typeof l.name === "string" && l.name &&
         typeof l.url === "string" && l.url && typeof l.app === "string" && l.app;
+      if (ok) linkIds[l.id] = true;
+      return ok;
     });
     (Array.isArray(HOME.hide_packages) ? HOME.hide_packages : []).forEach(function (p) {
       if (typeof p === "string" && HIDDEN.indexOf(p) < 0) HIDDEN.push(p);
@@ -2070,6 +2073,8 @@
       installed: function (pkg) { return !(data.apps || []).length || (data.apps || []).some(function (x) { return x.package === pkg; }); },
       launch: function (pkg) {
         opened(pkg);
+        var lt = (data.apps || []).filter(function (x) { return x.package === pkg && x.link; })[0];
+        if (lt) { openLinkTile(lt); return; }
         if (TV && TV.launch(pkg)) return;
         api("POST", "/api/launch", { app: pkg }).catch(function (e) { status(e.message); });
       },
@@ -3038,11 +3043,7 @@
       return;
     }
     opened(a.package);
-    if (a.link) {   // the link in its own app; if the app will not take it, the app itself
-      if (TV && ((TV.openLink && TV.openLink(a.link, a.app)) || TV.launch(a.app))) return;
-      api("POST", "/api/launch", { app: a.app }).catch(function (e) { status(e.message); });
-      return;
-    }
+    if (a.link) { openLinkTile(a); return; }
     if (TV && TV.launch(a.package)) return;
     api("POST", "/api/launch", { app: a.id || a.package }).catch(function (e) { status(e.message); });
   }
@@ -3655,7 +3656,7 @@
     var hidden = data.apps.filter(function (a) { return HIDDEN_TV.indexOf(a.package) >= 0; });
     if (!arr.items.length && !hidden.length) return [info("apps-none", t("apps_none"))];
     var row = function (it, where) {
-      return { kind: "item", key: "app:" + it.package, label: it.name, value: t(where), icon: it.package,
+      return { kind: "item", key: "app:" + it.package, label: it.name, value: t(where), icon: it.link ? "" : it.package,
         act: function () { cycleApp(it.package); },
         move: where === "app_hidden" ? null : function (d) { moveAppRow(it.package, d); } };
     };
@@ -4509,6 +4510,12 @@
     return LINKS.filter(function (l) { return apps.some(function (a) { return a.package === l.app; }); })
       .map(function (l) { return { kind: "app", name: l.name, package: "link:" + l.id, link: l.url, app: l.app, colour: l.colour }; });
   }
+  // every list of apps the home shows comes through here, so the link tiles are always in it
+  function appList(apps) { return sortApps(apps.concat(linkApps(apps))); }
+  function openLinkTile(a) {   // the link in its own app; if the app will not take it, the app itself
+    if (TV && ((TV.openLink && TV.openLink(a.link, a.app)) || TV.launch(a.app))) return;
+    api("POST", "/api/launch", { app: a.app }).catch(function (e) { status(e.message); });
+  }
   function sortApps(list) {
     var rank = function (p) {
       var i = APP_ORDER.indexOf(p);
@@ -4572,8 +4579,8 @@
     if (lift || zone === "pmenu" || zone === "settings" || zone === "gear" || zone === "smart" || zone === "updask") return Promise.resolve();
     if (OFFLINE) {
       // only the TV's own apps, in the order last saved; no shows, no Screens
-      if (TV) data.apps = sortApps(nativeApps() || []);
-      else if (window.MOCK_APPS) data.apps = sortApps(window.MOCK_APPS.slice());
+      if (TV) data.apps = appList(nativeApps() || []);
+      else if (window.MOCK_APPS) data.apps = appList(window.MOCK_APPS.slice());
       data.bridge = false;
       // Keep watching with no computer: Android's own Watch Next list, the same for everyone in the house
       if (TV && TV.watchNext && KW_ON) {
@@ -4640,7 +4647,7 @@
         var apps = TV ? nativeApps() : (window.MOCK_APPS ? window.MOCK_APPS.slice() : null);
         if (!apps) apps = (data.bridgeApps || []).filter(function (a) { return a.installed !== false && a.id !== "home"; })
           .map(function (a) { return { kind: "app", id: a.id, name: a.name, package: a.package, colour: a.colour }; });
-        data.apps = sortApps(apps.concat(linkApps(apps)));
+        data.apps = appList(apps);
         if (!data.bridge) {   // no bridge: the order this TV keeps itself
           var lo = kept("tvhome.order.tv");
           if (lo && lo.packages) data.order = { saved: true, line: lo.line, packages: lo.packages };
@@ -4736,7 +4743,7 @@
       var lo = kept("tvhome.order.tv");
       if (lo && lo.packages) data.order = { saved: true, line: lo.line, packages: lo.packages };
     }
-    if (TV) data.apps = sortApps(nativeApps() || []);
+    if (TV) data.apps = appList(nativeApps() || []);
     if (cached || TV) { render(); mark("home-painted-from-cache"); }
     if (NIGHT) $("np-slot").appendChild($("np"));   // Now playing: the first card of the row
     renderQuick();
