@@ -50,7 +50,7 @@
 
   // Settings from the bridge's config.json (served as config.js, and saved with the offline copy),
   // read in readConfig() once the page starts (mock.js fills them in for previews). See docs/CONFIG.md.
-  var CFG = {}, HOME = {}, TVCFG = {}, QUICK = [];
+  var CFG = {}, HOME = {}, TVCFG = {}, QUICK = [], LINKS = [];
   var WXCFG = { lat: -33.8688, lon: 151.2093, place: "Sydney", timezone: "Australia/Sydney" };
   var QUICK_ALL = ["sleep", "picture", "look", "soundscape", "screen_off", "headphones", "input", "bluetooth", "network", "screensaver", "extend"];
   // The most personal photos this TV keeps (also MAX_PHOTOS in bridge/server.py and MainActivity.kt).
@@ -418,6 +418,13 @@
     initSoundscape();
     if (smartOn()) DOCK_APPS = Math.min(DOCK_APPS, 9);   // the Smart home tile takes one place in the dock
     CLOCK24 = clock24();
+    var linkIds = {};
+    LINKS = (Array.isArray(HOME.links) ? HOME.links : []).filter(function (l) {
+      var ok = l && typeof l.id === "string" && /^[a-z0-9-]{1,40}$/.test(l.id) && !linkIds[l.id] && typeof l.name === "string" && l.name &&
+        typeof l.url === "string" && l.url && typeof l.app === "string" && l.app;
+      if (ok) linkIds[l.id] = true;
+      return ok;
+    });
     (Array.isArray(HOME.hide_packages) ? HOME.hide_packages : []).forEach(function (p) {
       if (typeof p === "string" && HIDDEN.indexOf(p) < 0) HIDDEN.push(p);
     });
@@ -2066,6 +2073,8 @@
       installed: function (pkg) { return !(data.apps || []).length || (data.apps || []).some(function (x) { return x.package === pkg; }); },
       launch: function (pkg) {
         opened(pkg);
+        var lt = (data.apps || []).filter(function (x) { return x.package === pkg && x.link; })[0];
+        if (lt) { openLinkTile(lt); return; }
         if (TV && TV.launch(pkg)) return;
         api("POST", "/api/launch", { app: pkg }).catch(function (e) { status(e.message); });
       },
@@ -2311,8 +2320,8 @@
   function openAppMenu(a) {
     amApp = a; amI = 0;
     amItems = [{ act: "move", label: t("ctx_move") }, { act: "hide", label: t("ctx_hide") }];
-    if (TV && TV.uninstall) amItems.push({ act: "uninstall", label: t("ctx_uninstall") });
-    if (TV && TV.appInfo) amItems.push({ act: "info", label: t("ctx_info") });
+    if (TV && TV.uninstall && !a.link) amItems.push({ act: "uninstall", label: t("ctx_uninstall") });
+    if (TV && TV.appInfo && !a.link) amItems.push({ act: "info", label: t("ctx_info") });
     zone = "appmenu";
     renderAppMenu();
   }
@@ -2541,6 +2550,11 @@
     renderGrid();
   }
 
+  function linkFace(it) {
+    var bg = /^#[0-9a-fA-F]{3,8}$/.test(it.colour || "") ? ' style="background:' + it.colour + '"' : "";
+    return '<div class="face word"' + bg + ">" + esc(it.name) + "</div>";
+  }
+
   function dockHTML(it) {
     var face;
     if (it.kind === "screen") face = '<div class="face tool">' + ICONS.screen + "</div>";
@@ -2549,6 +2563,7 @@
     else if (it.kind === "gear") face = '<div class="face tool">' + ICONS.gear + "</div>";
     else if (it.kind === "devmode") face = '<div class="face tool">' + ICONS.devmode + "</div>";
     else if (it.kind === "smart") face = '<div class="face tool">' + window.smartHome.icon + "</div>";
+    else if (it.link) face = linkFace(it);
     else if (iconUrl(it.package)) face = '<div class="face"><img src="' + esc(iconUrl(it.package)) + '" alt="" decoding="async" onerror="this.parentNode.className=\'face word\';this.parentNode.textContent=this.getAttribute(\'data-name\')" data-name="' + esc(it.name) + '"></div>';
     else face = '<div class="face word">' + esc(it.name) + "</div>";
     var cls = "tile app dock-ic" + (it.kind === "input" ? " input-ic ic-" + esc(it.icon || "hdmi") : "") + (lift && it.package === lift.pkg ? " lifted" : "");
@@ -2564,6 +2579,7 @@
     else if (it.kind === "gear") face = '<div class="face tool">' + ICONS.gear + "</div>";
     else if (it.kind === "devmode") face = '<div class="face tool">' + ICONS.devmode + "</div>";
     else if (it.kind === "smart") face = '<div class="face tool">' + window.smartHome.icon + "</div>";
+    else if (it.link) face = linkFace(it);
     else if (it.banner) face = '<div class="face"><img src="' + esc(it.banner) + '" alt="" decoding="async"></div>';
     else if (iconUrl(it.package)) face = '<div class="face icon" style="background:' + esc(it.colour || "#2a2a30") + '"><img src="' + esc(iconUrl(it.package)) + '" alt=""></div>';
     else face = '<div class="face word" style="background:' + esc(it.colour || "#2a2a30") + '">' + esc(it.name) + "</div>";
@@ -3027,6 +3043,7 @@
       return;
     }
     opened(a.package);
+    if (a.link) { openLinkTile(a); return; }
     if (TV && TV.launch(a.package)) return;
     api("POST", "/api/launch", { app: a.id || a.package }).catch(function (e) { status(e.message); });
   }
@@ -3639,7 +3656,7 @@
     var hidden = data.apps.filter(function (a) { return HIDDEN_TV.indexOf(a.package) >= 0; });
     if (!arr.items.length && !hidden.length) return [info("apps-none", t("apps_none"))];
     var row = function (it, where) {
-      return { kind: "item", key: "app:" + it.package, label: it.name, value: t(where), icon: it.package,
+      return { kind: "item", key: "app:" + it.package, label: it.name, value: t(where), icon: it.link ? "" : it.package,
         act: function () { cycleApp(it.package); },
         move: where === "app_hidden" ? null : function (d) { moveAppRow(it.package, d); } };
     };
@@ -4487,6 +4504,18 @@
         banner: TV.bannerUrl ? TV.bannerUrl(a.package) : "http://tvos.invalid/banner/" + a.package };   // the launcher makes one when the app has none
     });
   }
+  // home.links: a tile that opens a link (a live channel, say) in an app on this TV, shown only
+  // while that app is installed. It moves, hides and is ordered like any app, as "link:<id>".
+  function linkApps(apps) {
+    return LINKS.filter(function (l) { return apps.some(function (a) { return a.package === l.app; }); })
+      .map(function (l) { return { kind: "app", name: l.name, package: "link:" + l.id, link: l.url, app: l.app, colour: l.colour }; });
+  }
+  // every list of apps the home shows comes through here, so the link tiles are always in it
+  function appList(apps) { return sortApps(apps.concat(linkApps(apps))); }
+  function openLinkTile(a) {   // the link in its own app; if the app will not take it, the app itself
+    if (TV && ((TV.openLink && TV.openLink(a.link, a.app)) || TV.launch(a.app))) return;
+    api("POST", "/api/launch", { app: a.app }).catch(function (e) { status(e.message); });
+  }
   function sortApps(list) {
     var rank = function (p) {
       var i = APP_ORDER.indexOf(p);
@@ -4550,8 +4579,8 @@
     if (lift || zone === "pmenu" || zone === "settings" || zone === "gear" || zone === "smart" || zone === "updask") return Promise.resolve();
     if (OFFLINE) {
       // only the TV's own apps, in the order last saved; no shows, no Screens
-      if (TV) data.apps = sortApps(nativeApps() || []);
-      else if (window.MOCK_APPS) data.apps = sortApps(window.MOCK_APPS.slice());
+      if (TV) data.apps = appList(nativeApps() || []);
+      else if (window.MOCK_APPS) data.apps = appList(window.MOCK_APPS.slice());
       data.bridge = false;
       // Keep watching with no computer: Android's own Watch Next list, the same for everyone in the house
       if (TV && TV.watchNext && KW_ON) {
@@ -4618,7 +4647,7 @@
         var apps = TV ? nativeApps() : (window.MOCK_APPS ? window.MOCK_APPS.slice() : null);
         if (!apps) apps = (data.bridgeApps || []).filter(function (a) { return a.installed !== false && a.id !== "home"; })
           .map(function (a) { return { kind: "app", id: a.id, name: a.name, package: a.package, colour: a.colour }; });
-        data.apps = sortApps(apps);
+        data.apps = appList(apps);
         if (!data.bridge) {   // no bridge: the order this TV keeps itself
           var lo = kept("tvhome.order.tv");
           if (lo && lo.packages) data.order = { saved: true, line: lo.line, packages: lo.packages };
@@ -4714,7 +4743,7 @@
       var lo = kept("tvhome.order.tv");
       if (lo && lo.packages) data.order = { saved: true, line: lo.line, packages: lo.packages };
     }
-    if (TV) data.apps = sortApps(nativeApps() || []);
+    if (TV) data.apps = appList(nativeApps() || []);
     if (cached || TV) { render(); mark("home-painted-from-cache"); }
     if (NIGHT) $("np-slot").appendChild($("np"));   // Now playing: the first card of the row
     renderQuick();
