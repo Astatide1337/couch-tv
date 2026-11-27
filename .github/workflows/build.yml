@@ -60,6 +60,7 @@ jobs:
         run: |
           tv-home/android/gradlew -p tv-home/android --no-daemon -q testDebugUnitTest
           node tests/test_manual_home_weather.js
+          node tests/test_link_tiles.js
           python -m unittest discover -s tests -p test_fire_settings_watch.py
 
       - name: On-TV app unit tests
